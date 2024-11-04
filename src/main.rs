@@ -110,7 +110,10 @@ impl Parser {
         match &tokens[0] {
             Token::IntLit(_) => {},
             Token::VarName(_) => {},
-            _ => return None
+            _ => {
+                println!("expected value: either literal or variable name");
+                return None
+            }
         }
 
         match tokens.pop_front().unwrap() {
@@ -120,10 +123,7 @@ impl Parser {
             Token::VarName(name) => {
                 return Some(Value::Var(name))
             },
-            _ => { 
-                println!("expected value: either literal or variable name");
-                return None
-            }
+            _ => { return None }
         }
     }
 
@@ -131,8 +131,8 @@ impl Parser {
         match tokens[0] {
             Token::Exit => {
                 tokens.pop_front();
-                let next = tokens.pop_front();
 
+                let next = tokens.pop_front();
                 let Some(Token::LeftParen) = next else { 
                     println!("expected ( after exit");
                     return None;
@@ -141,14 +141,12 @@ impl Parser {
                 let result = Stmt::ExitStmt(Parser::parse_value(tokens)?);
                 
                 let next = tokens.pop_front();
-                
                 let Some(Token::RightParen) = next else { 
                     println!("expected )");
                     return None;
                 };
                 
                 let next = tokens.pop_front();
-                
                 let Some(Token::Semicolon) = next else { 
                     println!("expected ;");
                     return None;
@@ -158,15 +156,14 @@ impl Parser {
             }
             Token::LetDeclaration => {
                 tokens.pop_front();
-                let next = tokens.pop_front();
 
+                let next = tokens.pop_front();
                 let Some(Token::VarName(dest)) = next else { 
                     println!("expected variable name");
                     return None;
                 };
 
                 let next = tokens.pop_front();
-                
                 let Some(Token::EqualSign) = next else { 
                     println!("expected =");
                     return None;
@@ -175,7 +172,6 @@ impl Parser {
                 let result = Stmt::DeclarationStmt(dest, Parser::parse_value(tokens)?);
 
                 let next = tokens.pop_front();
-                
                 let Some(Token::Semicolon) = next else { 
                     println!("expected ;");
                     return None;
@@ -183,7 +179,9 @@ impl Parser {
 
                 return Some(result);
             }
-            _ => {}
+            _ => {
+                println!("expected statement start: either exit or variable declaration");
+            }
         }
 
         None
@@ -252,6 +250,6 @@ fn main() {
 
     let tokens = Tokenizer::tokenize(&bytes);
     let ast = Parser::parse(tokens);
-    println!("{:#?}", ast.unwrap());
+    println!("{:#?}", ast);
     //let result = Codegen::generate(&tokens);
 }
