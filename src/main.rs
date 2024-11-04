@@ -198,37 +198,73 @@ impl Parser {
     }
 }
 
-struct Codegen;
+struct Codegen {
+    stack_size: i64,
+    output_string: String,
+    varnames: Vec<(String, i64)>,
+}
 
 impl Codegen {
-    fn generate(tokens: &Vec<Token>) -> String {
-        let mut result = String::new();
+    fn new() -> Self {
+        Self {
+            stack_size: 0,
+            output_string: String::new(),
+            varnames: vec![],
+        }
+    }
 
-        result += "global _start\n";
-        result += "\n";
-        result += "_start:\n";
+    fn push(&mut self, reg: &str) {
+        self.output_string += format!("    push {}\n", reg).as_str();
+        self.stack_size += 1;
+    }
+    
+    fn pop(&mut self, reg: &str) {
+        self.output_string += format!("    pop {}\n", reg).as_str();
+        self.stack_size -= 1;
+    }
 
-        for i in 0..tokens.len()-4 {
-            if let (
-                Token::Exit, 
-                Token::LeftParen, 
-                Token::IntLit(IntLiteral(num)), 
-                Token::RightParen, 
-                Token::Semicolon
-            ) = (
-                tokens[i].clone(), 
-                tokens[i+1].clone(), 
-                tokens[i+2].clone(), 
-                tokens[i+3].clone(), 
-                tokens[i+4].clone()
-            ) {
-                 result += "    mov rax, 60\n";
-                 result += format!("    mov rdi, {}\n", num).as_str();
-                 result += "    syscall\n";
+    fn gen_value(&mut self, value: &Value) {
+        match value {
+            Value::IntLit(IntLiteral(num)) => {
+                self.output_string += format!("    mov rax, {}\n", num).as_str();
+                self.push("rax");
+            }
+            Value::Var(Variable(varname)) => {
+                let var_position = self.varnames.iter().find(|var| var.0 == *varname).take().unwrap().1;
+                self.output_string += format!("    mov rax, [rsp + 8 * {}]\n", var_position).as_str();
+                self.push("rax");
             }
         }
+    }
 
-        result += "    ret\n";
+    fn generate_stmt(&mut self, statement: &Stmt) {
+        match &statement {
+            Stmt::DeclarationStmt(Variable(varname), value) => {
+                self.gen_value(value);
+                self.pop("rdi");
+
+                self.varnames.push((varname.to_string(), self.stack_size));
+                self.push("rax");
+            }
+            Stmt::ExitStmt(value) => {
+                self.gen_value(value);
+                self.output_string += format!("    mov rax, 60\n").as_str();
+                self.pop("rdi");
+                self.output_string += format!("    syscall\n").as_str();
+            }
+        }
+    }
+
+    fn generate(&mut self, ast: &AST) -> String {
+        self.output_string += format!("global _start\n").as_str();
+        self.output_string += format!("_start: \n").as_str();
+
+        for statement in ast.statements.iter() {
+            self.generate_stmt(statement);
+        }
+
+        let result = self.output_string.clone();
+        *self = Codegen::new();
         result
     }
 }
@@ -249,7 +285,8 @@ fn main() {
     };
 
     let tokens = Tokenizer::tokenize(&bytes);
-    let ast = Parser::parse(tokens);
-    println!("{:#?}", ast);
+    let ast = Parser::parse(tokens).unwrap();
+    let program = Codegen::new().generate(&ast);
+    println!("{}", program);
     //let result = Codegen::generate(&tokens);
 }
