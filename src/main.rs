@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, env, fs, ops::Deref};
+use std::{collections::VecDeque, env, fs};
 
 #[derive(Debug, Clone)]
 struct Variable(String);
@@ -8,17 +8,41 @@ struct IntLiteral(i64);
 #[derive(Debug, Clone)]
 enum Token {
     LetDeclaration,
+    If,
+    Else,
+    Elif,
     VarName(Variable),
     EqualSign,
     LeftParen,
     RightParen,
+    LeftCurlyParen,
+    RightCurlyParen,
     Exit,
     IntLit(IntLiteral),
     Semicolon,
+    Exclamation,
+    Asterix,
     Plus,
+    Slash,
+    Minus,
+    Ampersand,
+    VertBar,
+    LessThan,
+    GreaterThan,
 }
 
-impl Token {}
+impl Token {
+    fn get_value(self) -> Option<Value> {
+        if let Token::IntLit(intlit) = self {
+            return Some(Value::IntLit(intlit));
+        }
+        if let Token::VarName(varname) = self {
+            return Some(Value::Var(varname));
+        }
+        println!("expected value got {:?}", self);
+        return None
+    }
+}
 
 struct Tokenizer;
 
@@ -41,6 +65,15 @@ impl Tokenizer {
                     "let" => {
                         tokens.push_back(Token::LetDeclaration)
                     },
+                    "if" => {
+                        tokens.push_back(Token::If)
+                    },
+                    "else" => {
+                        tokens.push_back(Token::Else)
+                    },
+                    "elif" => {
+                        tokens.push_back(Token::Elif)
+                    },
                     _ => {
                         if src[start..start+1].to_string().chars().next().unwrap().is_alphabetic() {
                             tokens.push_back(Token::VarName(Variable(src[start..end].to_string())))
@@ -62,9 +95,19 @@ impl Tokenizer {
                 '\n' => {},
                 '(' => {tokens.push_back(Token::LeftParen)},
                 ')' => {tokens.push_back(Token::RightParen)},
+                '{' => {tokens.push_back(Token::LeftCurlyParen)},
+                '}' => {tokens.push_back(Token::RightCurlyParen)},
                 ';' => {tokens.push_back(Token::Semicolon)},
                 '=' => {tokens.push_back(Token::EqualSign)},
                 '+' => {tokens.push_back(Token::Plus)},
+                '*' => {tokens.push_back(Token::Asterix)},
+                '/' => {tokens.push_back(Token::Slash)},
+                '-' => {tokens.push_back(Token::Minus)},
+                '&' => {tokens.push_back(Token::Ampersand)},
+                '!' => {tokens.push_back(Token::Exclamation)},
+                '|' => {tokens.push_back(Token::VertBar)},
+                '<' => {tokens.push_back(Token::LessThan)},
+                '>' => {tokens.push_back(Token::GreaterThan)},
                 _ => {
                     start -= 1;
                 }
@@ -75,10 +118,60 @@ impl Tokenizer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Operation {
-    Plus
+    Multiply,
+    Divide,
+    Add,
+    Subtract,
+
+    Equal,
+    NotEqual,
+
+    GreaterEqual,
+    LessEqual,
+    Greater,
+    Less,
+
+    Or,
+    And,
 }
+
+const PRECEDENCE: &[u8] = &[
+    4,
+    4,
+    3,
+    3,
+    
+    2,
+    2,
+
+    2,
+    2,
+    2,
+    2,
+
+    1,
+    0,
+];
+
+const ASSOCIATIVITY: &[u8] = &[
+    0,
+    0,
+    0,
+    0,
+       
+    0,
+    0,
+
+    0,
+    0,
+    0,
+    0,
+
+    0,
+    0,
+];
 
 #[derive(Debug)]
 enum Value {
@@ -88,7 +181,7 @@ enum Value {
 
 #[derive(Debug)]
 enum Expr {
-    Expr(Value, Operation, Box<Expr>),
+    Expr(Box<Expr>, Operation, Box<Expr>),
     Value(Value)
 }
 
@@ -108,8 +201,19 @@ enum Stmt {
 }
 
 #[derive(Debug)]
+enum ScopeItem {
+    Scope(Scope),
+    Stmt(Stmt),
+}
+
+#[derive(Debug)]
+struct Scope {
+    contents: Vec<ScopeItem>,
+}
+
+#[derive(Debug)]
 struct AST {
-    statements: Vec<Stmt>
+    global: Scope,
 }
 
 // variable => String
@@ -153,24 +257,130 @@ impl Parser {
         match tokens[0] {
             Token::Plus => {
                 tokens.pop_front();
-                Some(Operation::Plus)
-            },
+                Some(Operation::Add)
+            }
+            Token::Asterix => {
+                tokens.pop_front();
+                Some(Operation::Multiply)
+            }
+            Token::Slash => {
+                tokens.pop_front();
+                Some(Operation::Divide)
+            }
+            Token::Minus => {
+                tokens.pop_front();
+                Some(Operation::Subtract)
+            }
+            Token::EqualSign => {
+                tokens.pop_front();
+                match tokens[0] {
+                    Token::EqualSign => {
+                        tokens.pop_front();
+                        Some(Operation::Equal) 
+                    } 
+                    _ => {
+                        println!("expected '=='");
+                        None
+                    }
+                }
+            }
+            Token::Exclamation => {
+                tokens.pop_front();
+                match tokens[0] {
+                    Token::EqualSign => {
+                        tokens.pop_front();
+                        Some(Operation::NotEqual) 
+                    } 
+                    _ => {
+                        println!("expected '!='");
+                        None
+                    }
+                }
+            }
+            Token::Ampersand => {
+                tokens.pop_front();
+                if let Some(Token::Ampersand) = tokens.pop_front() {
+                    Some(Operation::And)
+                } else {
+                    println!("expected '&&'");
+                    None
+                }
+            }
+            Token::VertBar => {
+                tokens.pop_front();
+                if let Some(Token::VertBar) = tokens.pop_front() {
+                    Some(Operation::Or)
+                } else {
+                    println!("expected '||'");
+                    None
+                }
+            }
+            Token::GreaterThan => {
+                tokens.pop_front();
+
+                match tokens[0] {
+                    Token::EqualSign => {
+                        tokens.pop_front();
+                        Some(Operation::GreaterEqual) 
+                    } 
+                    _ => Some(Operation::Greater)
+                }
+            }
+            Token::LessThan => {
+                tokens.pop_front();
+
+                match tokens[0] {
+                    Token::EqualSign => {
+                        tokens.pop_front();
+                        Some(Operation::LessEqual) 
+                    } 
+                    _ => Some(Operation::Less)
+                }
+            }
             _ => {
                 None
             }
         }
     }
+
+    fn compute_atom(tokens: &mut VecDeque<Token>) -> Option<Expr> {
+        let a = tokens.pop_front()?;
+
+        if let Token::LeftParen = a {
+            let expr = Self::parse_expr(tokens, 0);
+
+            if let Token::RightParen = tokens[0] {
+                tokens.pop_front();
+                return expr;
+            }
+
+            println!("expected ')'");
+            return None;
+        }
+
+        return Some(Expr::Value(a.get_value()?)); 
+    }
     
-    fn parse_expr(tokens: &mut VecDeque<Token>) -> Option<Expr> {
-        let Some(a) = Parser::parse_value(tokens) else { 
-            return None; 
-        };
+    fn parse_expr(tokens: &mut VecDeque<Token>, min_prec: u8) -> Option<Expr> {
+        let mut result = Self::compute_atom(tokens)?;
+            
+        let mut op_pres = 0;
 
-        let Some(op) = Parser::parse_op(tokens) else { return Some(Expr::Value(a)); };
+        while op_pres >= min_prec {
+            let Some(op) = Self::parse_op(tokens) else {
+                return Some(result);
+            };
+        
+            op_pres = PRECEDENCE[op as usize];
 
-        let Some(b) = Parser::parse_expr(tokens) else { return None; };
+            result = Expr::Expr(
+                Box::new(result),
+                op, 
+                Box::new(Self::parse_expr(tokens, op_pres + ASSOCIATIVITY[op as usize])?),
+            );
+        }        
 
-        return Some(Expr::Expr(a, op, Box::new(b)));
+        return Some(result);
     }
 
     fn parse_stmt(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
@@ -184,7 +394,7 @@ impl Parser {
                     return None;
                 };
 
-                let result = Stmt::ExitStmt(Parser::parse_expr(tokens)?);
+                let result = Stmt::ExitStmt(Parser::parse_expr(tokens, 0)?);
                 
                 let next = tokens.pop_front();
                 let Some(Token::RightParen) = next else { 
@@ -215,7 +425,7 @@ impl Parser {
                     return None;
                 };
                 
-                let result = Stmt::DeclarationStmt(dest, Parser::parse_expr(tokens)?);
+                let result = Stmt::DeclarationStmt(dest, Parser::parse_expr(tokens, 0)?);
 
                 let next = tokens.pop_front();
                 let Some(Token::Semicolon) = next else { 
@@ -225,37 +435,68 @@ impl Parser {
 
                 return Some(result);
             }
-            _ => {
-                println!("expected statement start: either exit or variable declaration");
-            }
+            _ => {}
         }
 
         None
     }
 
-    fn parse(mut tokens: VecDeque<Token>) -> Option<AST> {
-        let mut statements = vec![];
+    fn parse_scopes(tokens: &mut VecDeque<Token>) -> Option<Scope> {
+        tokens.pop_front();
 
-        while tokens.len() != 0 {
-            statements.push(Parser::parse_stmt(&mut tokens)?);
+        let mut contents: Vec<ScopeItem> = vec![];
+
+        loop {
+            if let Some(stmt) = Self::parse_stmt(tokens) {
+                contents.push(ScopeItem::Stmt(stmt));
+                continue;
+            }
+
+            if let Token::LeftCurlyParen = &tokens[0] {
+                contents.push(ScopeItem::Scope(Self::parse_scopes(tokens)?));
+            } else { break }
         }
 
-        return Some(AST { statements });
+        if let Some(Token::RightCurlyParen) = tokens.pop_front() {
+            Some(Scope { contents })
+        } else {
+            println!("expected '}}'");
+            None
+        }
     }
+
+    fn parse(mut tokens: VecDeque<Token>) -> Option<AST> {
+        tokens.push_front(Token::LeftCurlyParen);
+        tokens.push_back(Token::RightCurlyParen);
+        Some(AST { global: Self::parse_scopes(&mut tokens)? })
+    }
+}
+
+struct GenVar {
+    name: String,
+    stack_loc: i64,
+}
+
+struct GenScope {
+    vars: Vec<GenVar>,
+    stack_loc: i64,
 }
 
 struct Codegen {
     stack_size: i64,
     output_string: String,
-    varnames: Vec<(String, i64)>,
+    scopes: Vec<GenScope>,
 }
+
+//save stack loc
+//pop for (i = stack pos - stack loc; i--)
 
 impl Codegen {
     fn new() -> Self {
         Self {
             stack_size: 0,
             output_string: String::new(),
-            varnames: vec![],
+            scopes: vec![],
         }
     }
 
@@ -276,8 +517,12 @@ impl Codegen {
                 self.push("rax");
             }
             Value::Var(Variable(varname)) => {
-                let var_position = self.varnames.iter().find(|var| var.0 == *varname).take().unwrap().1;
-                self.output_string += format!("    mov rax, [rsp + 8 * {}] ; {}\n",  self.stack_size - var_position, varname).as_str();
+                let var_position = self.get_var_offset(varname).unwrap();
+                if self.stack_size - var_position == 0 {
+                    self.output_string += format!("    mov rax, [rsp] ; {}\n", varname).as_str();
+                } else {
+                    self.output_string += format!("    mov rax, [rsp + {}] ; {}\n", 8 * (self.stack_size - var_position), varname).as_str();
+                }
                 self.push("rax");
             }
         }
@@ -288,21 +533,76 @@ impl Codegen {
             Expr::Value(value) => {
                 self.gen_value(value)
             },
-            Expr::Expr(a, op, expr) => {
-                self.gen_value(a);
-
-                if let Some(b) = expr.get_value() {
+            Expr::Expr(a, op, b) => {
+                if let Some(b) = b.get_value() {
                     self.gen_value(b);
                 } else {
-                    self.gen_expr(expr);    
+                    self.gen_expr(b);    
+                }
+                
+                if let Some(a) = a.get_value() {
+                    self.gen_value(a);
+                } else {
+                    self.gen_expr(a);    
                 }
 
                 self.pop("rax");
                 self.pop("r8");
 
                 match op {
-                    Operation::Plus => {
+                    Operation::Add => {
                         self.output_string += format!("    add rax, r8\n").as_str();
+                    }
+                    Operation::Multiply => {
+                        self.output_string += format!("    mul r8\n").as_str();
+                    }
+                    Operation::Divide => {
+                        self.output_string += format!("    mov rdx, 0\n").as_str();
+                        self.output_string += format!("    div r8\n").as_str();
+                    }
+                    Operation::Subtract => {
+                        self.output_string += format!("    sub rax, r8\n").as_str();
+                    }
+
+                    Operation::And => {
+                        self.output_string += format!("    and al, r8b\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+                    Operation::Or => {
+                        self.output_string += format!("    or al, r8b\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+
+                    Operation::Equal => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    sete al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+                    Operation::NotEqual => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    setne al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+
+                    Operation::Less => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    setl al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+                    Operation::LessEqual => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    setle al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+                    Operation::Greater => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    setg al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
+                    }
+                    Operation::GreaterEqual => {
+                        self.output_string += format!("    cmp al, r8b\n").as_str();
+                        self.output_string += format!("    setge al\n").as_str();
+                        self.output_string += format!("    movzx rax, al\n").as_str();
                     }
                 }
                 
@@ -310,12 +610,32 @@ impl Codegen {
             }
         }
     }
+    
+    fn get_var_offset(&self, varname: &String) -> Option<i64> {
+        for scope in self.scopes.iter().rev() {
+            for var in scope.vars.iter() {
+                if var.name == *varname {
+                    return Some(var.stack_loc);
+                }
+            }
+        }
+
+        return None
+    }
+
+    fn create_var(&mut self, varname: String) {
+        let last = self.scopes.len()-1;
+        self.scopes[last].vars.push(GenVar {
+            stack_loc: self.stack_size,
+            name: varname,
+        });
+    }
 
     fn generate_stmt(&mut self, statement: &Stmt) {
         match &statement {
             Stmt::DeclarationStmt(Variable(varname), expr) => {
                 self.gen_expr(expr);
-                self.varnames.push((varname.to_string(), self.stack_size));
+                self.create_var(varname.to_string());
             }
             Stmt::ExitStmt(value) => {
                 self.gen_expr(value);
@@ -326,14 +646,31 @@ impl Codegen {
         }
     }
 
+    fn gen_scope(&mut self, scope: &Scope) {
+        self.scopes.push(GenScope { 
+            vars: vec![], 
+            stack_loc: self.stack_size 
+        });
+
+        for item in scope.contents.iter() {
+            match item {
+                ScopeItem::Scope(scope) => {
+                    self.gen_scope(scope);
+                }
+                ScopeItem::Stmt(stmt) => {
+                    self.generate_stmt(stmt);
+                }
+            }
+        }
+
+        self.scopes.pop();
+    }
+
     fn generate(&mut self, ast: &AST) -> String {
         self.output_string += format!("global _start\n").as_str();
         self.output_string += format!("_start: \n").as_str();
 
-        for statement in ast.statements.iter() {
-            self.generate_stmt(statement);
-            self.output_string += format!("\n").as_str();
-        }
+        self.gen_scope(&ast.global);
 
         let result = self.output_string.clone();
         *self = Codegen::new();
@@ -357,9 +694,9 @@ fn main() {
     };
 
     let tokens = Tokenizer::tokenize(&bytes);
-    println!("{:?}", tokens);
+    println!("{:#?}", tokens);
     let ast = Parser::parse(tokens).unwrap();
     println!("{:#?}", ast);
-    let program = Codegen::new().generate(&ast);
-    println!("{}", program);
+    //let program = Codegen::new().generate(&ast);
+    //println!("{}", program);
 }
