@@ -29,6 +29,7 @@ pub enum Token {
     VertBar,
     LessThan,
     GreaterThan,
+    While,
 }
 
 pub struct Tokenizer;
@@ -60,6 +61,9 @@ impl Tokenizer {
                     },
                     "elif" => {
                         tokens.push_back(Token::Elif)
+                    },
+                    "while" => {
+                        tokens.push_back(Token::While)
                     },
                     _ => {
                         if src[start..start+1].to_string().chars().next().unwrap().is_alphabetic() {

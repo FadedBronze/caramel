@@ -82,6 +82,7 @@ impl Expr {
 pub enum Stmt {
     ExitStmt(Expr),
     DeclarationStmt(Variable, Expr),
+    AssignmentStmt(Variable, Expr),
 }
 
 #[derive(Debug)]
@@ -102,6 +103,7 @@ pub enum ScopeItem {
     Scope(Scope),
     Stmt(Stmt),
     IfStmt(IfStmt),
+    WhileLoop(Expr, Scope),
 }
 
 #[derive(Debug)]
@@ -318,6 +320,29 @@ impl Parser {
 
                 return Ok(result);
             }
+            Token::VarName(_) => {
+                let Some(Token::VarName(dest)) = tokens.pop_front() else { panic!("") };
+
+                let next = tokens.pop_front();
+                let Some(Token::EqualSign) = next else { 
+                    println!("expected =");
+                    return Err(ParseStmtError::Syntax);
+                };
+                
+                let result = if let Some(expr) = Parser::parse_expr(tokens, 0) {
+                    Stmt::AssignmentStmt(dest.clone(), expr)
+                } else {
+                    return Err(ParseStmtError::Syntax);
+                };
+
+                let next = tokens.pop_front();
+                let Some(Token::Semicolon) = next else { 
+                    println!("expected ;");
+                    return Err(ParseStmtError::Syntax);
+                };
+
+                return Ok(result);
+            }
             _ => {}
         }
 
@@ -376,6 +401,12 @@ impl Parser {
             match &tokens[0] {
                 Token::LeftCurlyParen => {
                     contents.push(ScopeItem::Scope(Self::parse_scope(tokens, true)?));
+                }
+                Token::While => {
+                    tokens.pop_front();
+                    let expr = Self::parse_expr(tokens, 0)?;
+                    let scope = Self::parse_scope(tokens, true)?;
+                    contents.push(ScopeItem::WhileLoop(expr, scope));
                 }
                 Token::If => {
                     contents.push(ScopeItem::IfStmt(Self::parse_if(tokens)?));

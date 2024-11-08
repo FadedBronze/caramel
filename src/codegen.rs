@@ -55,7 +55,7 @@ impl Codegen {
                 self.push("rax");
             }
             Value::Var(Variable(varname)) => {
-                let var_position = self.get_var_offset(varname).unwrap();
+                let var_position = self.get_var_stack_loc(varname).unwrap();
                 if self.stack_size - var_position == 0 {
                     self.add_line(format!("mov rax, [rsp] ; {}", varname).as_str());
                 } else {
@@ -149,7 +149,7 @@ impl Codegen {
         }
     }
     
-    fn get_var_offset(&self, varname: &String) -> Option<i64> {
+    fn get_var_stack_loc(&self, varname: &String) -> Option<i64> {
         for scope in self.scopes.iter().rev() {
             for var in scope.vars.iter() {
                 if var.name == *varname {
@@ -175,6 +175,16 @@ impl Codegen {
                 self.gen_expr(expr);
                 self.create_var(varname.to_string());
             }
+            Stmt::AssignmentStmt(Variable(varname), expr) => {
+                self.gen_expr(expr);
+                let Some(loc) = self.get_var_stack_loc(varname) else {
+                    println!("Cannot assign to undeclared value");
+                    return;
+                };
+
+                self.pop("rax");
+                self.add_line(format!("mov [rsp + {}], rax", (self.stack_size - loc)*8).as_str());
+            }
             Stmt::ExitStmt(value) => {
                 self.gen_expr(value);
                 self.add_line("mov rax, 60");
@@ -183,31 +193,6 @@ impl Codegen {
             }
         }
     }
-
-    //do if a {} elif b {} else {}
-    //
-    //if a
-    //je aa
-    //
-    //if b
-    //je bb
-    //
-    //jmp x
-    //
-    //bb
-    //jmp x
-    //
-    //aa
-    //jmp x
-    //x
-    //
-    //
-    //if a
-    //je aa
-    //jmp x
-    //aa
-    //{}
-    //x
 
     fn gen_if_recurse(&mut self, sub_stmts: &Vec<SubIfStmt>, position: usize, exit_addr: &str) {
         if sub_stmts.len() <= position {
@@ -273,6 +258,22 @@ impl Codegen {
                 }
                 ScopeItem::IfStmt(stmt) => {
                     self.gen_if(stmt);
+                }
+                ScopeItem::WhileLoop(expr, scope) => {
+                    let while_addr = format!("while_{}", rand::random::<u64>());
+                    let exit_addr = format!("exit_{}", rand::random::<u64>());
+
+                    self.add_label(&while_addr);
+
+                    self.gen_expr(expr);
+                    self.pop("rax");
+                    self.add_line("test rax, rax");
+                    self.add_line(format!("jz {}", exit_addr).as_str());
+
+                    self.gen_scope(scope);
+                    
+                    self.add_line(format!("jmp {}", while_addr).as_str());
+                    self.add_label(&exit_addr);
                 }
             }
         }

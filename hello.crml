@@ -1,8 +1,9 @@
-if 0 {
-  exit(10);
-} else {
-  let x = 5 * 5;
-  exit(x);
+let x = 0;
+let y = 1;
+
+while x < 5 {
+  x = x + 1;
+  y = y + y;
 }
 
-exit(30);
+exit(y);
