@@ -201,9 +201,23 @@ enum Stmt {
 }
 
 #[derive(Debug)]
+enum SubIfStmt {
+    Elif(Expr, Scope),
+    Else(Scope)
+}
+
+#[derive(Debug)]
+struct IfStmt {
+    expr: Expr, 
+    scope: Scope,
+    sub_stmts: Vec<SubIfStmt>,
+}
+
+#[derive(Debug)]
 enum ScopeItem {
     Scope(Scope),
     Stmt(Stmt),
+    IfStmt(IfStmt),
 }
 
 #[derive(Debug)]
@@ -214,6 +228,13 @@ struct Scope {
 #[derive(Debug)]
 struct AST {
     global: Scope,
+}
+
+#[derive(Debug)]
+enum ParseStmtError {
+    EndOfTokens,
+    NotStmt,
+    Syntax,
 }
 
 // variable => String
@@ -383,7 +404,11 @@ impl Parser {
         return Some(result);
     }
 
-    fn parse_stmt(tokens: &mut VecDeque<Token>) -> Option<Stmt> {
+    fn parse_stmt(tokens: &mut VecDeque<Token>) -> Result<Stmt, ParseStmtError> {
+        if tokens.len() == 0 {
+            return Err(ParseStmtError::EndOfTokens);
+        }
+
         match tokens[0] {
             Token::Exit => {
                 tokens.pop_front();
@@ -391,24 +416,28 @@ impl Parser {
                 let next = tokens.pop_front();
                 let Some(Token::LeftParen) = next else { 
                     println!("expected ( after exit");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
 
-                let result = Stmt::ExitStmt(Parser::parse_expr(tokens, 0)?);
+                let result = if let Some(expr) = Parser::parse_expr(tokens, 0) {
+                    Stmt::ExitStmt(expr)
+                } else {
+                    return Err(ParseStmtError::Syntax);
+                };
                 
                 let next = tokens.pop_front();
                 let Some(Token::RightParen) = next else { 
                     println!("expected )");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
                 
                 let next = tokens.pop_front();
                 let Some(Token::Semicolon) = next else { 
                     println!("expected ;");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
 
-                return Some(result);
+                return Ok(result);
             }
             Token::LetDeclaration => {
                 tokens.pop_front();
@@ -416,59 +445,109 @@ impl Parser {
                 let next = tokens.pop_front();
                 let Some(Token::VarName(dest)) = next else { 
                     println!("expected variable name");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
 
                 let next = tokens.pop_front();
                 let Some(Token::EqualSign) = next else { 
                     println!("expected =");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
                 
-                let result = Stmt::DeclarationStmt(dest, Parser::parse_expr(tokens, 0)?);
+                let result = if let Some(expr) = Parser::parse_expr(tokens, 0) {
+                    Stmt::DeclarationStmt(dest, expr)
+                } else {
+                    return Err(ParseStmtError::Syntax);
+                };
 
                 let next = tokens.pop_front();
                 let Some(Token::Semicolon) = next else { 
                     println!("expected ;");
-                    return None;
+                    return Err(ParseStmtError::Syntax);
                 };
 
-                return Some(result);
+                return Ok(result);
             }
             _ => {}
         }
 
-        None
+        return Err(ParseStmtError::NotStmt);
     }
 
-    fn parse_scopes(tokens: &mut VecDeque<Token>) -> Option<Scope> {
+    fn parse_if(tokens: &mut VecDeque<Token>) -> Option<IfStmt> {
         tokens.pop_front();
+        let expr = Self::parse_expr(tokens, 0)?;
+        let scope = Self::parse_scope(tokens, true)?;
+        let mut ifstmt = IfStmt{ expr, scope, sub_stmts: vec![] };
+
+        loop {
+            match &tokens[0] {
+                Token::Elif => {
+                    tokens.pop_front();
+                    let expr = Self::parse_expr(tokens, 0)?;
+                    let scope = Self::parse_scope(tokens, true)?;
+                    
+                    let elifstmt = SubIfStmt::Elif(expr, scope);
+                    ifstmt.sub_stmts.push(elifstmt);
+                },
+                Token::Else => {
+                    tokens.pop_front();
+                    let scope = Self::parse_scope(tokens, true)?;
+                    ifstmt.sub_stmts.push(SubIfStmt::Else(scope));
+                    return Some(ifstmt);
+                }
+                _ => {
+                    return Some(ifstmt);
+                }
+            }
+        }
+    }
+
+    fn parse_scope(tokens: &mut VecDeque<Token>, expect_paren: bool) -> Option<Scope> {
+        if expect_paren {
+            tokens.pop_front();
+        }
 
         let mut contents: Vec<ScopeItem> = vec![];
 
         loop {
-            if let Some(stmt) = Self::parse_stmt(tokens) {
-                contents.push(ScopeItem::Stmt(stmt));
-                continue;
+            match Self::parse_stmt(tokens) {
+                Ok(stmt) => {
+                    contents.push(ScopeItem::Stmt(stmt));
+                    continue;
+                }
+                Err(err) => match err {
+                    ParseStmtError::Syntax => { return None },
+                    ParseStmtError::NotStmt => {},
+                    ParseStmtError::EndOfTokens => { break; }
+                }
             }
 
-            if let Token::LeftCurlyParen = &tokens[0] {
-                contents.push(ScopeItem::Scope(Self::parse_scopes(tokens)?));
-            } else { break }
+            match &tokens[0] {
+                Token::LeftCurlyParen => {
+                    contents.push(ScopeItem::Scope(Self::parse_scope(tokens, true)?));
+                }
+                Token::If => {
+                    contents.push(ScopeItem::IfStmt(Self::parse_if(tokens)?));
+                }
+                _ => { break; }
+            }
         }
 
-        if let Some(Token::RightCurlyParen) = tokens.pop_front() {
-            Some(Scope { contents })
+        if expect_paren {
+            if let Some(Token::RightCurlyParen) = tokens.pop_front() {
+                Some(Scope { contents })
+            } else {
+                println!("expected '}}'");
+                None
+            }
         } else {
-            println!("expected '}}'");
-            None
+            Some(Scope { contents })
         }
     }
 
     fn parse(mut tokens: VecDeque<Token>) -> Option<AST> {
-        tokens.push_front(Token::LeftCurlyParen);
-        tokens.push_back(Token::RightCurlyParen);
-        Some(AST { global: Self::parse_scopes(&mut tokens)? })
+        Some(AST { global: Self::parse_scope(&mut tokens, false)? })
     }
 }
 
@@ -499,29 +578,40 @@ impl Codegen {
             scopes: vec![],
         }
     }
+    
+    fn add_label(&mut self, label: &str) {
+        self.output_string += label;
+        self.output_string += ":\n";
+    }
+
+    fn add_line(&mut self, line: &str) {
+        self.output_string += "    ";
+        self.output_string += line;
+        self.output_string += "\n";
+    }
 
     fn push(&mut self, reg: &str) {
-        self.output_string += format!("    push {}\n", reg).as_str();
+        self.add_line(format!("push {}", reg).as_str());
         self.stack_size += 1;
     }
     
     fn pop(&mut self, reg: &str) {
-        self.output_string += format!("    pop {}\n", reg).as_str();
+        self.add_line(format!("pop {}", reg).as_str());
         self.stack_size -= 1;
     }
     
     fn gen_value(&mut self, value: &Value) {
         match value {
             Value::IntLit(IntLiteral(num)) => {
-                self.output_string += format!("    mov rax, {}\n", num).as_str();
+                self.add_line(format!("mov rax, {}", num).as_str());
                 self.push("rax");
             }
             Value::Var(Variable(varname)) => {
                 let var_position = self.get_var_offset(varname).unwrap();
                 if self.stack_size - var_position == 0 {
-                    self.output_string += format!("    mov rax, [rsp] ; {}\n", varname).as_str();
+                    self.add_line(format!("mov rax, [rsp] ; {}", varname).as_str());
                 } else {
-                    self.output_string += format!("    mov rax, [rsp + {}] ; {}\n", 8 * (self.stack_size - var_position), varname).as_str();
+                    self.add_line(format!("mov rax, [rsp + {}] ; {}", 8 * (self.stack_size - var_position), varname).as_str());
                 }
                 self.push("rax");
             }
@@ -551,58 +641,58 @@ impl Codegen {
 
                 match op {
                     Operation::Add => {
-                        self.output_string += format!("    add rax, r8\n").as_str();
+                        self.add_line("add rax, r8");
                     }
                     Operation::Multiply => {
-                        self.output_string += format!("    mul r8\n").as_str();
+                        self.add_line("mul r8");
                     }
                     Operation::Divide => {
-                        self.output_string += format!("    mov rdx, 0\n").as_str();
-                        self.output_string += format!("    div r8\n").as_str();
+                        self.add_line("mov rdx, 0");
+                        self.add_line("div r8");
                     }
                     Operation::Subtract => {
-                        self.output_string += format!("    sub rax, r8\n").as_str();
+                        self.add_line("sub rax, r8");
                     }
 
                     Operation::And => {
-                        self.output_string += format!("    and al, r8b\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("and al, r8b");
+                        self.add_line("movzx rax, al");
                     }
                     Operation::Or => {
-                        self.output_string += format!("    or al, r8b\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("or al, r8b");
+                        self.add_line("movzx rax, al");
                     }
 
                     Operation::Equal => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    sete al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("sete al");
+                        self.add_line("movzx rax, al");
                     }
                     Operation::NotEqual => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    setne al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("setne al");
+                        self.add_line("movzx rax, al");
                     }
 
                     Operation::Less => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    setl al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("setl al");
+                        self.add_line("movzx rax, al");
                     }
                     Operation::LessEqual => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    setle al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("setle al");
+                        self.add_line("movzx rax, al");
                     }
                     Operation::Greater => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    setg al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("setg al");
+                        self.add_line("movzx rax, al");
                     }
                     Operation::GreaterEqual => {
-                        self.output_string += format!("    cmp al, r8b\n").as_str();
-                        self.output_string += format!("    setge al\n").as_str();
-                        self.output_string += format!("    movzx rax, al\n").as_str();
+                        self.add_line("cmp al, r8b");
+                        self.add_line("setge al");
+                        self.add_line("movzx rax, al");
                     }
                 }
                 
@@ -639,11 +729,85 @@ impl Codegen {
             }
             Stmt::ExitStmt(value) => {
                 self.gen_expr(value);
-                self.output_string += format!("    mov rax, 60\n").as_str();
+                self.add_line("mov rax, 60");
                 self.pop("rdi");
-                self.output_string += format!("    syscall\n").as_str();
+                self.add_line("syscall");
             }
         }
+    }
+
+    //do if a {} elif b {} else {}
+    //
+    //if a
+    //je aa
+    //
+    //if b
+    //je bb
+    //
+    //jmp x
+    //
+    //bb
+    //jmp x
+    //
+    //aa
+    //jmp x
+    //x
+    //
+    //
+    //if a
+    //je aa
+    //jmp x
+    //aa
+    //{}
+    //x
+
+    fn gen_if_recurse(&mut self, sub_stmts: &Vec<SubIfStmt>, position: usize, exit_addr: &str) {
+        if sub_stmts.len() <= position {
+            self.add_line(format!("jmp {}", exit_addr).as_str());
+            return;
+        }
+
+        let sub_stmt = &sub_stmts[position];
+
+        match sub_stmt {
+            SubIfStmt::Elif(expr, scope) => {
+                let addr = format!("elif_{}", rand::random::<u64>());
+                self.gen_expr(&expr);
+                self.pop("rax");
+                self.add_line("test rax, rax");
+                self.add_line(format!("jnz {}", addr).as_str());
+                
+                self.gen_if_recurse(sub_stmts, position+1, exit_addr);
+        
+                self.add_label(&addr);
+                self.gen_scope(scope);
+                
+                self.add_line(format!("jmp {}", exit_addr).as_str());
+                return;
+            }
+            SubIfStmt::Else(scope) => {
+                self.gen_scope(scope);
+                self.add_line(format!("jmp {}", exit_addr).as_str());
+            }
+        }
+    }
+
+    fn gen_if(&mut self, if_stmt: &IfStmt) {
+        let IfStmt { expr, scope, sub_stmts } = if_stmt;
+
+        let if_addr = format!("if_{}", rand::random::<u64>());
+        let exit_addr = format!("exit_{}", rand::random::<u64>());
+
+        self.gen_expr(expr);
+        self.pop("rax");
+        self.add_line("test rax, rax");
+        self.add_line(format!("jnz {}", if_addr).as_str());
+        
+        self.gen_if_recurse(sub_stmts, 0, &exit_addr);
+
+        self.add_label(&if_addr);
+        self.gen_scope(scope);
+        self.add_label(&exit_addr);
     }
 
     fn gen_scope(&mut self, scope: &Scope) {
@@ -660,6 +824,9 @@ impl Codegen {
                 ScopeItem::Stmt(stmt) => {
                     self.generate_stmt(stmt);
                 }
+                ScopeItem::IfStmt(stmt) => {
+                    self.gen_if(stmt);
+                }
             }
         }
 
@@ -667,8 +834,8 @@ impl Codegen {
     }
 
     fn generate(&mut self, ast: &AST) -> String {
-        self.output_string += format!("global _start\n").as_str();
-        self.output_string += format!("_start: \n").as_str();
+        self.output_string += "global _start\n";
+        self.add_label("_start");
 
         self.gen_scope(&ast.global);
 
@@ -697,6 +864,6 @@ fn main() {
     println!("{:#?}", tokens);
     let ast = Parser::parse(tokens).unwrap();
     println!("{:#?}", ast);
-    //let program = Codegen::new().generate(&ast);
-    //println!("{}", program);
+    let program = Codegen::new().generate(&ast);
+    println!("{}", program);
 }
