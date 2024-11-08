@@ -30,11 +30,24 @@ pub enum Token {
     LessThan,
     GreaterThan,
     While,
+    Colon,
 }
 
 pub struct Tokenizer;
 
 impl Tokenizer {
+    const KEYWORDS: &'static [(&'static str, Token)] = &[
+        ("exit", Token::Exit),
+        ("let", Token::LetDeclaration),
+        ("if", Token::If),
+        ("else", Token::Else),
+        ("elif", Token::Elif),
+        ("while", Token::While),
+    ];
+    const PRIMITIVIES: &'static [(&'static str, Token)] = &[
+        
+    ];
+
     pub fn tokenize(src: &str) -> VecDeque<Token> {
         let mut tokens = VecDeque::new();
         let mut start = 0;
@@ -46,30 +59,16 @@ impl Tokenizer {
             }
 
             if !c.is_alphanumeric() {
-                match &src[start..end] {
-                    "exit" => {
-                        tokens.push_back(Token::Exit)
-                    },
-                    "let" => {
-                        tokens.push_back(Token::LetDeclaration)
-                    },
-                    "if" => {
-                        tokens.push_back(Token::If)
-                    },
-                    "else" => {
-                        tokens.push_back(Token::Else)
-                    },
-                    "elif" => {
-                        tokens.push_back(Token::Elif)
-                    },
-                    "while" => {
-                        tokens.push_back(Token::While)
-                    },
-                    _ => {
-                        if src[start..start+1].to_string().chars().next().unwrap().is_alphabetic() {
-                            tokens.push_back(Token::VarName(Variable(src[start..end].to_string())))
-                        }
+                let mut matched = false;
+                for (keyword, token) in Self::KEYWORDS {
+                    if &src[start..end] == *keyword {
+                        tokens.push_back(token.clone());
+                        matched = true;
+                        break;
                     }
+                }
+                if !matched && src[start..start+1].to_string().chars().next().unwrap().is_alphabetic() {
+                    tokens.push_back(Token::VarName(Variable(src[start..end].to_string())))
                 }
 
                 if let Ok(num) = src[start..end].parse::<i64>() {
@@ -99,6 +98,7 @@ impl Tokenizer {
                 '|' => {tokens.push_back(Token::VertBar)},
                 '<' => {tokens.push_back(Token::LessThan)},
                 '>' => {tokens.push_back(Token::GreaterThan)},
+                ':' => {tokens.push_back(Token::Colon)},
                 _ => {
                     start -= 1;
                 }
