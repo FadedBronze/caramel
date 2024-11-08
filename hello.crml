@@ -1,4 +1,8 @@
-let x = 6;
-x = 4;
+if 0 {
+  exit(10);
+} else {
+  let x = 5 * 5;
+  exit(x);
+}
 
-exit(x);
+exit(30);
