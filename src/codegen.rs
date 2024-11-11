@@ -1,24 +1,24 @@
-use crate::{parser::{Expr, IfStmt, Operation, Scope, ScopeItem, Stmt, SubIfStmt, Value, AST}, tokenizer::{IntLiteral, Variable}};
+use crate::{parser::{NodeExpr, NodeIfStmt, NodeNumber, NodeOperation, NodeScope, NodeScopeItem, NodeStmt, NodeSubIfStmt, NodeValue, AbstractSyntaxTree}, tokenizer::Variable};
 
-struct GenVar {
+struct CodeGenerationVar {
     name: String,
-    stack_loc: i64,
+    stack_loc: i64, 
 }
 
-struct GenScope {
-    vars: Vec<GenVar>,
+struct CodeGenerationScope {
+    vars: Vec<CodeGenerationVar>,
 }
 
-pub struct Codegen {
+pub struct CodeGeneration {
     stack_size: i64,
     output_string: String,
-    scopes: Vec<GenScope>,
+    scopes: Vec<CodeGenerationScope>,
 }
 
 //save stack loc
 //pop for (i = stack pos - stack loc; i--)
 
-impl Codegen {
+impl CodeGeneration {
     pub fn new() -> Self {
         Self {
             stack_size: 0,
@@ -48,13 +48,13 @@ impl Codegen {
         self.stack_size -= 1;
     }
     
-    fn gen_value(&mut self, value: &Value) {
+    fn gen_value(&mut self, value: &NodeValue) {
         match value {
-            Value::IntLit(IntLiteral(num)) => {
+            NodeValue::Number(NodeNumber::IntLiteral(num)) => {
                 self.add_line(format!("mov rax, {}", num).as_str());
                 self.push("rax");
             }
-            Value::Var(Variable(varname)) => {
+            NodeValue::Var(Variable(varname)) => {
                 let var_position = self.get_var_stack_loc(varname).unwrap();
                 if self.stack_size - var_position == 0 {
                     self.add_line(format!("mov rax, [rsp] ; {}", varname).as_str());
@@ -63,15 +63,23 @@ impl Codegen {
                 }
                 self.push("rax");
             }
+            NodeValue::Type(_) => todo!(),
+            NodeValue::Number(NodeNumber::FloatLiteral(_)) => todo!(),
+            NodeValue::Number(NodeNumber::UintLiteral(_)) => todo!()
         }
     }
     
-    fn gen_expr(&mut self, value: &Expr) {
+    fn gen_expr(&mut self, value: &NodeExpr) {
         match &value {
-            Expr::Value(value) => {
+            NodeExpr::Value(value) => {
                 self.gen_value(value)
             },
-            Expr::Expr(a, op, b) => {
+            NodeExpr::Expr {
+                lhs: a,
+                rhs: b,
+                op,
+                ..
+            } => {
                 if let Some(b) = b.get_value() {
                     self.gen_value(b);
                 } else {
@@ -88,56 +96,57 @@ impl Codegen {
                 self.pop("r8");
 
                 match op {
-                    Operation::Add => {
+                    NodeOperation::As => {}
+                    NodeOperation::Add => {
                         self.add_line("add rax, r8");
                     }
-                    Operation::Multiply => {
+                    NodeOperation::Multiply => {
                         self.add_line("mul r8");
                     }
-                    Operation::Divide => {
+                    NodeOperation::Divide => {
                         self.add_line("mov rdx, 0");
                         self.add_line("div r8");
                     }
-                    Operation::Subtract => {
+                    NodeOperation::Subtract => {
                         self.add_line("sub rax, r8");
                     }
 
-                    Operation::And => {
+                    NodeOperation::And => {
                         self.add_line("and al, r8b");
                         self.add_line("movzx rax, al");
                     }
-                    Operation::Or => {
+                    NodeOperation::Or => {
                         self.add_line("or al, r8b");
                         self.add_line("movzx rax, al");
                     }
 
-                    Operation::Equal => {
+                    NodeOperation::Equal => {
                         self.add_line("cmp al, r8b");
                         self.add_line("sete al");
                         self.add_line("movzx rax, al");
                     }
-                    Operation::NotEqual => {
+                    NodeOperation::NotEqual => {
                         self.add_line("cmp al, r8b");
                         self.add_line("setne al");
                         self.add_line("movzx rax, al");
                     }
 
-                    Operation::Less => {
+                    NodeOperation::Less => {
                         self.add_line("cmp al, r8b");
                         self.add_line("setl al");
                         self.add_line("movzx rax, al");
                     }
-                    Operation::LessEqual => {
+                    NodeOperation::LessEqual => {
                         self.add_line("cmp al, r8b");
                         self.add_line("setle al");
                         self.add_line("movzx rax, al");
                     }
-                    Operation::Greater => {
+                    NodeOperation::Greater => {
                         self.add_line("cmp al, r8b");
                         self.add_line("setg al");
                         self.add_line("movzx rax, al");
                     }
-                    Operation::GreaterEqual => {
+                    NodeOperation::GreaterEqual => {
                         self.add_line("cmp al, r8b");
                         self.add_line("setge al");
                         self.add_line("movzx rax, al");
@@ -163,19 +172,19 @@ impl Codegen {
 
     fn create_var(&mut self, varname: String) {
         let last = self.scopes.len()-1;
-        self.scopes[last].vars.push(GenVar {
+        self.scopes[last].vars.push(CodeGenerationVar {
             stack_loc: self.stack_size,
             name: varname,
         });
     }
 
-    fn generate_stmt(&mut self, statement: &Stmt) {
+    fn generate_stmt(&mut self, statement: &NodeStmt) {
         match &statement {
-            Stmt::DeclarationStmt(Variable(varname), expr) => {
+            NodeStmt::DeclarationStmt(Variable(varname), typehint, expr) => {
                 self.gen_expr(expr);
                 self.create_var(varname.to_string());
             }
-            Stmt::AssignmentStmt(Variable(varname), expr) => {
+            NodeStmt::AssignmentStmt(Variable(varname), expr) => {
                 self.gen_expr(expr);
                 let Some(loc) = self.get_var_stack_loc(varname) else {
                     println!("Cannot assign to undeclared value");
@@ -185,7 +194,7 @@ impl Codegen {
                 self.pop("rax");
                 self.add_line(format!("mov [rsp + {}], rax", (self.stack_size - loc)*8).as_str());
             }
-            Stmt::ExitStmt(value) => {
+            NodeStmt::ExitStmt(value) => {
                 self.gen_expr(value);
                 self.add_line("mov rax, 60");
                 self.pop("rdi");
@@ -194,7 +203,7 @@ impl Codegen {
         }
     }
 
-    fn gen_if_recurse(&mut self, sub_stmts: &Vec<SubIfStmt>, position: usize, exit_addr: &str) {
+    fn gen_if_recurse(&mut self, sub_stmts: &Vec<NodeSubIfStmt>, position: usize, exit_addr: &str) {
         if sub_stmts.len() <= position {
             self.add_line(format!("jmp {}", exit_addr).as_str());
             return;
@@ -203,7 +212,7 @@ impl Codegen {
         let sub_stmt = &sub_stmts[position];
 
         match sub_stmt {
-            SubIfStmt::Elif(expr, scope) => {
+            NodeSubIfStmt::Elif(expr, scope) => {
                 let addr = format!("elif_{}", rand::random::<u64>());
                 self.gen_expr(&expr);
                 self.pop("rax");
@@ -218,15 +227,15 @@ impl Codegen {
                 self.add_line(format!("jmp {}", exit_addr).as_str());
                 return;
             }
-            SubIfStmt::Else(scope) => {
+            NodeSubIfStmt::Else(scope) => {
                 self.gen_scope(scope);
                 self.add_line(format!("jmp {}", exit_addr).as_str());
             }
         }
     }
 
-    fn gen_if(&mut self, if_stmt: &IfStmt) {
-        let IfStmt { expr, scope, sub_stmts } = if_stmt;
+    fn gen_if(&mut self, if_stmt: &NodeIfStmt) {
+        let NodeIfStmt { expr, scope, sub_stmts } = if_stmt;
 
         let if_addr = format!("if_{}", rand::random::<u64>());
         let exit_addr = format!("exit_{}", rand::random::<u64>());
@@ -243,23 +252,23 @@ impl Codegen {
         self.add_label(&exit_addr);
     }
 
-    fn gen_scope(&mut self, scope: &Scope) {
-        self.scopes.push(GenScope { 
+    fn gen_scope(&mut self, scope: &NodeScope) {
+        self.scopes.push(CodeGenerationScope { 
             vars: vec![], 
         });
 
         for item in scope.contents.iter() {
             match item {
-                ScopeItem::Scope(scope) => {
+                NodeScopeItem::Scope(scope) => {
                     self.gen_scope(scope);
                 }
-                ScopeItem::Stmt(stmt) => {
+                NodeScopeItem::Stmt(stmt) => {
                     self.generate_stmt(stmt);
                 }
-                ScopeItem::IfStmt(stmt) => {
+                NodeScopeItem::IfStmt(stmt) => {
                     self.gen_if(stmt);
                 }
-                ScopeItem::WhileLoop(expr, scope) => {
+                NodeScopeItem::WhileLoop(expr, scope) => {
                     let while_addr = format!("while_{}", rand::random::<u64>());
                     let exit_addr = format!("exit_{}", rand::random::<u64>());
 
@@ -281,14 +290,14 @@ impl Codegen {
         self.scopes.pop();
     }
 
-    pub fn generate(&mut self, ast: &AST) -> String {
+    pub fn generate(&mut self, ast: &AbstractSyntaxTree) -> String {
         self.output_string += "global _start\n";
         self.add_label("_start");
 
         self.gen_scope(&ast.global);
 
         let result = self.output_string.clone();
-        *self = Codegen::new();
+        *self = CodeGeneration::new();
         result
     }
 }

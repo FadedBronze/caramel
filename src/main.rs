@@ -1,11 +1,12 @@
 use std::{collections::VecDeque, env, fs};
 
-use codegen::Codegen;
+use codegen::CodeGeneration;
 use parser::Parser;
 use tokenizer::Tokenizer;
 mod tokenizer;
 mod parser;
 mod codegen;
+mod arena;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -26,6 +27,6 @@ fn main() {
     println!("{:#?}", tokens);
     let ast = Parser::parse(tokens).unwrap();
     println!("{:#?}", ast);
-    let program = Codegen::new().generate(&ast);
-    println!("{}", program);
+    //let program = CodeGeneration::new().generate(&ast);
+    //println!("{}", program);
 }

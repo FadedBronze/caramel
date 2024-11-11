@@ -8,6 +8,7 @@ pub struct IntLiteral(pub i64);
 #[derive(Debug, Clone)]
 pub enum Token {
     LetDeclaration,
+    As,
     If,
     Else,
     Elif,
@@ -31,6 +32,12 @@ pub enum Token {
     GreaterThan,
     While,
     Colon,
+    Dot,
+    U,
+
+    Int64,
+    Uint64,
+    Float64
 }
 
 pub struct Tokenizer;
@@ -43,9 +50,11 @@ impl Tokenizer {
         ("else", Token::Else),
         ("elif", Token::Elif),
         ("while", Token::While),
-    ];
-    const PRIMITIVIES: &'static [(&'static str, Token)] = &[
-        
+
+        ("as", Token::As),
+        ("int64", Token::Int64),
+        ("uint64", Token::Uint64),
+        ("float64", Token::Float64),
     ];
 
     pub fn tokenize(src: &str) -> VecDeque<Token> {
@@ -99,6 +108,8 @@ impl Tokenizer {
                 '<' => {tokens.push_back(Token::LessThan)},
                 '>' => {tokens.push_back(Token::GreaterThan)},
                 ':' => {tokens.push_back(Token::Colon)},
+                '.' => {tokens.push_back(Token::Dot)},
+                'u' => {tokens.push_back(Token::Dot)},
                 _ => {
                     start -= 1;
                 }
