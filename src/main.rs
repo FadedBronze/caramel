@@ -6,7 +6,6 @@ use tokenizer::Tokenizer;
 mod tokenizer;
 mod parser;
 mod codegen;
-mod arena;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -25,8 +24,8 @@ fn main() {
 
     let tokens = Tokenizer::tokenize(&bytes);
     println!("{:#?}", tokens);
-    let ast = Parser::parse(tokens).unwrap();
-    println!("{:#?}", ast);
-    //let program = CodeGeneration::new().generate(&ast);
-    //println!("{}", program);
+    let ast = Parser::new(tokens).parse().unwrap();
+    //println!("{:?}", ast);
+    let program = CodeGeneration::new().generate(&ast);
+    println!("{}", program);
 }
