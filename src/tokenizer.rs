@@ -33,7 +33,6 @@ pub enum Token {
     While,
     Colon,
     Dot,
-    U,
 
     Int64,
     Uint64,
@@ -109,7 +108,6 @@ impl Tokenizer {
                 '>' => {tokens.push_back(Token::GreaterThan)},
                 ':' => {tokens.push_back(Token::Colon)},
                 '.' => {tokens.push_back(Token::Dot)},
-                'u' => {tokens.push_back(Token::Dot)},
                 _ => {
                     start -= 1;
                 }

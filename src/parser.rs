@@ -67,7 +67,6 @@ const ASSOCIATIVITY: &[u8] = &[
 pub enum NodeNumber {
     FloatLiteral(f64),
     IntLiteral(i64),
-    UintLiteral(u64)
 }
 
 #[derive(Debug)]
@@ -285,16 +284,6 @@ impl Parser {
             return Some(NodeNumber::FloatLiteral((num + decimal) * sign))
         }
         
-        if let Token::U = self.tokens[0] {
-            if sign == -1 {
-                println!("negative numbers aren't supported in unsigned datatypes");
-                return None;
-            }
-            self.tokens.pop_front();
-
-            return Some(NodeNumber::IntLiteral(num * sign))
-        }
-
         return Some(NodeNumber::IntLiteral(num * sign))
     }
 

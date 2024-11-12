@@ -65,7 +65,6 @@ impl CodeGeneration {
             }
             NodeValue::Type(_) => todo!(),
             NodeValue::Number(NodeNumber::FloatLiteral(_)) => todo!(),
-            NodeValue::Number(NodeNumber::UintLiteral(_)) => todo!()
         }
     }
     
