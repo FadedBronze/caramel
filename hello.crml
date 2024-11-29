@@ -1,3 +1,6 @@
-let x: int64 = 2 + 2;
+fn double_add_three(val: int64) {
+  let x = val * 2; 
+  exit(x);
+}
 
-exit(x);
+double_add_three(7);

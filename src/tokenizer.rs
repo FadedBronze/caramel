@@ -1,18 +1,18 @@
 use crate::VecDeque;
 
-#[derive(Debug, Clone)]
-pub struct Variable(pub String);
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VarName(pub String);
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntLiteral(pub i64);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     LetDeclaration,
     As,
     If,
     Else,
     Elif,
-    VarName(Variable),
+    VarName(VarName),
     EqualSign,
     LeftParen,
     RightParen,
@@ -33,6 +33,9 @@ pub enum Token {
     While,
     Colon,
     Dot,
+    Return,
+    Fn,
+    Comma,
 
     Int64,
     Uint64,
@@ -49,6 +52,8 @@ impl Tokenizer {
         ("else", Token::Else),
         ("elif", Token::Elif),
         ("while", Token::While),
+        ("fn", Token::Fn),
+        ("return", Token::Return),
 
         ("as", Token::As),
         ("int64", Token::Int64),
@@ -66,7 +71,7 @@ impl Tokenizer {
                 end += 1;
             }
 
-            if !c.is_alphanumeric() {
+            if !c.is_alphanumeric() && c != '_' {
                 let mut matched = false;
                 for (keyword, token) in Self::KEYWORDS {
                     if &src[start..end] == *keyword {
@@ -76,7 +81,7 @@ impl Tokenizer {
                     }
                 }
                 if !matched && src[start..start+1].to_string().chars().next().unwrap().is_alphabetic() {
-                    tokens.push_back(Token::VarName(Variable(src[start..end].to_string())))
+                    tokens.push_back(Token::VarName(VarName(src[start..end].to_string())))
                 }
 
                 if let Ok(num) = src[start..end].parse::<i64>() {
@@ -108,6 +113,7 @@ impl Tokenizer {
                 '>' => {tokens.push_back(Token::GreaterThan)},
                 ':' => {tokens.push_back(Token::Colon)},
                 '.' => {tokens.push_back(Token::Dot)},
+                ',' => {tokens.push_back(Token::Comma)},
                 _ => {
                     start -= 1;
                 }
